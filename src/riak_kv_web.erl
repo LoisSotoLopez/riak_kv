@@ -170,8 +170,11 @@ raw_dispatch(Name) ->
         riak_kv_wm_queue, Props},
     
     {["membership_request"],
-        riak_kv_wm_queue, Props}
+        riak_kv_wm_queue, Props},
 
+    %% qriak endpoints
+    {["qriak"], riak_kv_wm_qriak, Props}
+    
     ] || {Prefix, Props} <- Props2 ]).
 
 is_post(Req) ->
