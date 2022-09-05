@@ -59,7 +59,13 @@ select(Bucket, Conditions) ->
     end,
     case Eval of
       true -> 
-        ResponseFields = [{Key, get_index_val(Key, Indexes)} || {Key} <- list_of_uniques([{"id"} | get_condition_key_list(Conditions)])],
+        ResponseFields = 
+          lists:filtermap(
+            fun
+                ({{binary_index, IndexKey}, IndexVal}) -> {true, {IndexKey, IndexVal}};
+                (_) -> false
+            end,
+            Indexes),
         Info = 
           qriak_respinfo:total_count(
             qriak_respinfo:new()),
@@ -137,17 +143,6 @@ run_query({ok, QueryTerm}) ->
   end;
 run_query(_) ->
   {error, bad_format_query}.
-
-get_condition_key_list(Conditions) ->
-  lists:flatten([get_condition_key(C) || C <- Conditions]).
-
-get_condition_key({_Atom, List}) ->
-  [get_condition_key(Cond) || Cond <- List];
-get_condition_key({Atom,_,_}) ->
-  {Atom}.
-
-get_index_val(FieldName,Indexes) ->
-  proplists:get_value({binary_index, FieldName}, Indexes).
 
 evalue_conditions(Indexes, Conditions, is_or) ->
   lists:foldl(
@@ -278,10 +273,6 @@ list_intersect(List, no_relevant) ->
   List;
 list_intersect(List1, List2) ->
   [L1 || L1 <- List1, L2 <- List2, L1 =:= L2].
-
-list_of_uniques(List) ->
-  Set = sets:from_list(List),
-  sets:to_list(Set).
 
 list_union(List, no_relevant) ->
   List;
