@@ -34,9 +34,13 @@ between
 character_literal
 colour_like
 from
+%% greater_than
+%% greater_or_equal_to
 identifier
 is_
 left_paren
+%% less_than
+%% less_or_equal_to
 or_
 reads_like
 right_paren
@@ -91,6 +95,10 @@ ComparisonPredicate -> Identifier Comp CharacterLiteral : make_expr('$1', '$2', 
 
 Comp -> reads_like : '$1'.
 Comp -> colour_like : '$1'.
+%% Comp -> greater_than : '$1'.
+%% Comp -> greater_or_equal_to : '$1'.
+%% Comp -> less_than : '$1'.
+%% Comp -> less_or_equal_to : '$1'.
 
 CharacterLiteral -> character_literal : character_literal_to_binary('$1').
 

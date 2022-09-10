@@ -29,6 +29,15 @@ convert_condition({reads_like, Field, Value}) ->
     {binary_to_list(Field), reads_like, Value};
 convert_condition({colour_like, Field, Value}) ->
     {binary_to_list(Field), colour_like, Value};
+% convert_condition({greater_than, Field, Value}) ->
+%     {binary_to_list(Field), greater_than, Value};
+% convert_condition({greater_or_equal_to, Field, Value}) ->
+%     {binary_to_list(Field), greater_or_equal_to, Value};
+% convert_condition({less_than, Field, Value}) ->
+%     {binary_to_list(Field), less_than, Value};
+% convert_condition({less_or_equal_to, Field, Value}) ->
+%     {binary_to_list(Field), less_than, Value};
+
 convert_condition({and_, Cond1, Cond2}) ->
     {is_and, [convert_condition(Cond1), convert_condition(Cond2)]};
 convert_condition({or_, Cond1, Cond2}) ->

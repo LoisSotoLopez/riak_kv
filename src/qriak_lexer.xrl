@@ -12,7 +12,11 @@ AND = (A|a)(N|n)(D|d)
 BETWEEN = (B|b)(E|e)(T|t)(W|w)(E|e)(E|e)(N|n)
 COLOUR_LIKE = (C|c)(O|o)(L|l)(O|o)(U|u)(R|r)(_)(L|l)(I|i)(K|k)(E|e)
 FROM = (F|f)(R|r)(O|o)(M|m)
+GT = (>)
+GTE = (>)(=)
 IS = (I|i)(S|s)
+LT = (<)
+LTE = (<)(=)
 OR = (O|o)(R|r)
 READS_LIKE = (R|r)(E|e)(A|a)(D|d)(S|s)(_)(L|l)(I|i)(K|k)(E|e)
 WHERE = (W|w)(H|h)(E|e)(R|r)(E|e)
@@ -35,6 +39,10 @@ Rules.
 {BETWEEN} : {token, {between, list_to_binary(TokenChars)}}.
 {READS_LIKE}  : {token, {reads_like, list_to_binary(TokenChars)}}.
 {COLOUR_LIKE}  : {token, {colour_like, list_to_binary(TokenChars)}}.
+%% {GT} : {token, {greater_than, list_to_binary(TokenChars)}}.
+%% {GTE} : {token, {greater_or_equal_to, list_to_binary(TokenChars)}}.
+%% {LT} : {token, {less_than, list_to_binary(TokenChars)}}.
+%% {LTE} : {token, {less_or_equal_to, list_to_binary(TokenChars)}}.
 
 {CHARACTER_LITERAL} :
   {token, {character_literal, clean_up_literal(TokenChars)}}.

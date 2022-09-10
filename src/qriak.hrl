@@ -1,5 +1,3 @@
--define(HEADER_FREQ,20).
-
 %% RECORDS
 -record(qriak_response, {
     info :: qriak_respinfo:respinfo(),
@@ -18,4 +16,8 @@
   | {field_key(), reads_like, field_value()}
   | {field_key(), colour_like, field_value()}
   | {field_key(), in_range, {field_value(), field_value()}}.
+  % | {field_key(), greater_than, field_value()},
+  % | {field_key(), greater_or_equal_to, field_value()},
+  % | {field_key(), less_than, field_value()},
+  % | {field_key(), less_or_equal_to, field_value()}.
 -type qriak_conditions() :: [] | [qriak_condition()].

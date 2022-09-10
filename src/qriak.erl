@@ -166,9 +166,19 @@ evalue_conditions(Indexes, Conditions, is_and) ->
     [evalue_condition(Indexes, C) || C <- Conditions]).
 
 evalue_condition(Indexes, {Field, reads_like, Value}) ->
-  reads_like(proplists:lookup({binary_index, Field}, Indexes), Value);
+  [IndexValue] = proplists:get_value({binary_index, Field}, Indexes),
+  reads_like(IndexValue, Value);
 evalue_condition(Indexes, {Field, colour_like, Value}) ->
-  colour_like(proplists:lookup({binary_index, Field}, Indexes), Value);
+  [IndexValue] = proplists:get_value({binary_index, Field}, Indexes),
+  colour_like(IndexValue, Value);
+evalue_condition(_Indexes, {_Field, greater_than, _Value}) ->
+  true;
+evalue_condition(_Indexes, {_Field, greater_or_equal_to, _Value}) ->
+  true;
+evalue_condition(_Indexes, {_Field, less_than, _Value}) ->
+  true;
+evalue_condition(_Indexes, {_Field, less_or_equal_to, _Value}) ->
+  true;
 evalue_condition(_Indexes, {_Field, is, _Value}) ->
   true;
 evalue_condition(_Indexes, {_Field, in_range, _Values}) ->
@@ -213,10 +223,26 @@ evalue_conditions_2i(Client, Bucket, Conditions, is_and) ->
     [evalue_condition_2i(Client, Bucket, C) || C <- Conditions]).
 
 evalue_condition_2i(Client, Bucket, {Field, is, BinValue}) ->
-  {ok, KeyList} = query_index(Client, Bucket, Field, BinValue),
+  {ok, KeyList} = query_index(Client, Bucket, Field, [{start_term, BinValue}, {end_term, BinValue}]),
   KeyList;
 evalue_condition_2i(Client, Bucket, {Field, in_range, {BinVal1, BinVal2}}) ->
-  {ok, KeyList} = query_index(Client, Bucket, Field, BinVal1, BinVal2),
+  {ok, KeyList} = query_index(Client, Bucket, Field, [{start_term, BinVal1}, {end_term, BinVal2}]),
+  KeyList;
+evalue_condition_2i(Client, Bucket, {Field, greater_than, BinValue0}) ->
+  IntegerValue0 = binary:decode_unsigned(BinValue0),
+  BinValue1 = binary:encode_unsigned(IntegerValue0+1),
+  {ok, KeyList} = query_index(Client, Bucket, Field, [{start_term, BinValue1}]),
+  KeyList;  
+evalue_condition_2i(Client, Bucket, {Field, greater_or_equal_to, BinValue}) ->
+  {ok, KeyList} = query_index(Client, Bucket, Field, [{start_term, BinValue}]),
+  KeyList;  
+evalue_condition_2i(Client, Bucket, {Field, less_than, BinValue0}) ->
+  IntegerValue0 = binary:decode_unsigned(BinValue0),
+  BinValue1 = binary:encode_unsigned(IntegerValue0-1),
+  {ok, KeyList} = query_index(Client, Bucket, Field, [{end_term, BinValue1}]),
+  KeyList;
+evalue_condition_2i(Client, Bucket, {Field, less_or_equal_to, BinValue}) ->
+  {ok, KeyList} = query_index(Client, Bucket, Field, [{end_term, BinValue}]),
   KeyList;  
 evalue_condition_2i(Client, Bucket, {is_and, Conditions}) ->
   evalue_conditions_2i(Client, Bucket, Conditions, is_and);
@@ -225,38 +251,41 @@ evalue_condition_2i(Client, Bucket, {is_or, Conditions}) ->
 evalue_condition_2i(_Client, _Bucket, _Conditions) ->
   no_relevant.
 
-reads_like(_Str1, _Str2) ->
-  true.
+reads_like(Value, Regex)->
+  try
+    case re:run(Value, Regex) of
+      {match, _Capture} ->
+        true;
+      match ->
+        true;
+      nomatch ->
+        false
+    end
+  catch
+    _:_ ->
+      false
+  end.
 
-colour_like(_Col1, _Col2) ->
-  true.
 
-query_index(Client, Bucket, Field, BinValue) ->
+    
+
+colour_like(Col1, Col2) ->
+  qriak_colours:are_similar(Col1, Col2).
+
+query_index(Client, Bucket, Field, IndexQueryOverwrites) ->
   Field2i = field_to_index_key(Field),
+  IndexQueryDefaults = [
+    {field, Field2i}, 
+    {start_term, undefined}, 
+    {end_term, undefined}, 
+    {term_regex, undefined},
+    {max_results, undefined}, 
+    {return_terms, false}, 
+    {continuation, undefined}],
+  IndexQueryEntry =
+    overwrite_propl(IndexQueryDefaults, IndexQueryOverwrites),
   {ok, IndexQuery} = 
-    riak_index:to_index_query([
-      {field, Field2i}, 
-      {start_term, BinValue}, 
-      {end_term, BinValue}, 
-      {term_regex, undefined},
-      {max_results, undefined}, 
-      {return_terms, false}, 
-      {continuation, undefined}]),
-  riak_client:get_index(
-    Bucket, 
-    IndexQuery, 
-    Client).
-
-query_index(Client, Bucket, Field, BinValue1, BinValue2) ->
-  {ok, IndexQuery} =
-    riak_index:to_index_query([
-      {field, field_to_index_key(Field)}, 
-      {start_term, BinValue1}, 
-      {end_term, BinValue2}, 
-      {term_regex, undefined},
-      {max_results, undefined}, 
-      {return_terms, false}, 
-      {continuation, undefined}]),
+    riak_index:to_index_query(IndexQueryEntry),
   riak_client:get_index(
     Bucket, 
     IndexQuery, 
@@ -278,3 +307,10 @@ list_union(List, no_relevant) ->
   List;
 list_union(List1, List2) ->
   lists:usort(List1 ++ List2).
+
+overwrite_propl(Default, Overwrite) ->
+  lists:map(
+    fun({K,V}) ->
+      {K, proplists:get_value(K, Overwrite, V)}
+    end,
+    Default).

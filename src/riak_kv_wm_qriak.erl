@@ -104,38 +104,15 @@ execute_qriak_query(RD, #ctx{} = Ctx) ->
 %% -------------------------------------------------------------------
 %% INTERNAL FUNCTIONS
 %% -------------------------------------------------------------------
-% produce_wm_out(#qriak_response{info = Info, items = Items}) ->
-%     {200, 
-%         [{<<"info">>, produce_response_info(Info)},
-%         {<<"items">>, << "[", (produce_response_items(Items))/binary, "]" >>}]};
 produce_wm_out(#qriak_response{info = Info, items = Items}) ->
     {200, 
         [{<<"info">>, Info},
         {<<"items">>, Items}]};
 produce_wm_out({error, bad_format_query}) ->
     {400, [{<<"error_msg">>, <<"Badly formatted query">>}]};
+produce_wm_out({error, timeout}) ->
+    {500, [{<<"error_msg">>, <<"Timeout error. Try narrowing the possible result list by adding or changing conditions.">>}]};
 produce_wm_out({error, Error}) ->
-    {400, [{<<"error_msg">>, Error}]};
+    {500, [{<<"error_msg">>, Error}]};
 produce_wm_out(Other) ->
     {500, [{<<"error_msg">>, io_lib:format(<<"Unrecognized qriak response : ~p">>, [Other])}]}.
-
-% produce_response_info(#{total_count := Count}) ->
-%     [{<<"total_count">>, Count}].
-
-% produce_response_items(Items) ->
-%     produce_response_items(Items, <<>>).
-
-% produce_response_items([H], Acc) when is_list(H)->
-%     << Acc/binary, "{", (produce_response_items(H))/binary, "}" >>;
-% produce_response_items([H | T], Acc) when is_list(H) ->
-%     NewAcc = << Acc/binary, "{", (produce_response_items(H))/binary, "}," >>,
-%     produce_response_items(T, NewAcc);
-% produce_response_items([{K, [V]} = Item], Acc) ->
-%     << Acc/binary, (produce_response_item(Item))/binary >>;
-% produce_response_items([{K, [V]} = Item | Rest], Acc) ->
-%     NewAcc =  << Acc/binary, (produce_response_item(Item))/binary, "," >>,
-%     produce_response_items(Rest, NewAcc).
-
-% produce_response_item({K, [V]}) ->
-%     lists:flatten(io_lib:format("~s : ~s",[K, V])).
-
