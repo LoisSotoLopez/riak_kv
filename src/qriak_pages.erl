@@ -4,8 +4,7 @@
 -export([
     init/0,
     new_pages/1,
-    get_pages/3,
-    redefine_pages/4
+    process_pages/6
 ]).
 
 %% TEST EXPORTS
@@ -41,8 +40,8 @@ new_pages({bucket, Bucket} = QueryTarget) ->
             {ok, BucketKeys} = riak_client:get_index(Bucket, IndexQuery, Client),
             SortedKeys = lists:sort(BucketKeys),
             SortedFullKeys = [{Bucket, K} || K <- SortedKeys],
-            store_keys(QueryTarget, SortedFullKeys),
-            store_keys({query, PagesId}, SortedFullKeys);
+            store_keys(QueryTarget, SortedFullKeys, 1),
+            store_keys({query, PagesId}, SortedFullKeys, 1);
         true ->
             clone_pages(QueryTarget, {query, PagesId})
     end,
@@ -50,30 +49,47 @@ new_pages({bucket, Bucket} = QueryTarget) ->
 new_pages({keys, FullKeys}) ->
     PagesId = pages_id(),
     SortedFullKeys = lists:sort(FullKeys),
-    store_keys({query, PagesId}, SortedFullKeys),
+    store_keys({query, PagesId}, SortedFullKeys, 1),
     PagesId.
-    
--spec get_pages(PagesId, FromPos, Count) -> Resp when
-    PagesId :: pages_id(),
-    FromPos :: non_neg_integer(),
-    Count :: pos_integer(),
-    Resp :: list().
-get_pages(PagesId, FromPos, Count) ->
-    [{{query, PagesId}, Keys}] = ets:lookup(?MODULE, {query, PagesId}),
-    lists:sublist(Keys, FromPos, Count).
 
--spec redefine_pages(PagesId, FromPos, Count, NewKeys) -> Resp when
+-spec process_pages(PagesId, FromPos, Count, RedefineFun, MergeFun, ReadFun) -> Result when
     PagesId :: pages_id(),
     FromPos :: non_neg_integer(),
     Count :: pos_integer(),
-    NewKeys :: list(),
-    Resp :: ok.
-redefine_pages(PagesId, FromPos, Count, RedefinedKeys) ->
-    [{{query, PagesId}, Keys}] = ets:lookup(?MODULE, {query, PagesId}),
-    Pre = do_pre(Keys, FromPos),
-    Post = do_post(Keys, FromPos, Count),
+    RedefineFun :: function(),
+    MergeFun :: function(),
+    ReadFun :: function(),
+    Result :: any().
+process_pages(PagesId, FromPos, Count, RedefineFun, MergeFun, ReadFun) ->
+    [{{query, PagesId}, Keys, RedefinedCount}] = ets:lookup(?MODULE, {query, PagesId}),
+    case (RedefinedCount < length(Keys)) and (RedefinedCount < (FromPos + Count)) of
+        false ->
+            io:format("Just read~n",[]),
+            ToReadKeys = lists:sublist(Keys, FromPos, FromPos+Count-1),
+            ReadFun(ToReadKeys);
+        true ->
+            io:format("Had to process~n",[]),
+            RedefineFrom = min(FromPos, RedefinedCount),
+            repeat_redefine_until(PagesId, Keys, RedefineFrom, FromPos, Count, RedefineFun, MergeFun, undefined)
+    end.
+
+repeat_redefine_until(PagesId, Keys, RedefineFrom, FromPos, Count, RedefineFun, MergeFun, PreviousResult) ->
+    ToRedefineKeys = lists:sublist(Keys, RedefineFrom, FromPos+Count-1),
+    RedefinedCount = length(ToRedefineKeys),
+    Pre = do_pre(Keys, RedefineFrom),
+    Post = do_post(Keys, RedefineFrom, RedefinedCount),
+    {RedefinedKeys, Result} = RedefineFun(ToRedefineKeys),
     NewKeys = Pre ++ RedefinedKeys ++ Post,
-    store_keys({query, PagesId}, NewKeys).
+    NewRedefineFrom = RedefineFrom + length(RedefinedKeys),
+    store_keys({query, PagesId}, NewKeys, NewRedefineFrom),
+    {NewResult, AccSize} = MergeFun(PreviousResult, Result),
+    case (AccSize >= Count) or (length(Post) =:= 0) of
+        true ->
+            NewResult;
+        false ->
+            repeat_redefine_until(PagesId, NewKeys, NewRedefineFrom, NewRedefineFrom, Count, RedefineFun, MergeFun, NewResult)
+    end.
+    
 
 %%-------------------------------------
 %% INTERNAL EXPORTS
@@ -89,13 +105,13 @@ do_post(_Keys, _FromPos, _Count) ->
 pages_exist(QueryTarget) ->
     ets:member(?MODULE, QueryTarget).
 
-store_keys(QueryTarget, Keys) ->
-    true = ets:insert(?MODULE, {QueryTarget, Keys}),
+store_keys(QueryTarget, Keys, RedefinedCount) ->
+    true = ets:insert(?MODULE, {QueryTarget, Keys, RedefinedCount}),
     ok.
 
 clone_pages(PagesId1, PagesId2) ->
-    [{PagesId1, Pages}] = ets:lookup(?MODULE, PagesId1),
-    ets:insert(?MODULE, PagesId2, Pages).
+    [{PagesId1, PagesEntry}] = ets:lookup(?MODULE, PagesId1),
+    ets:insert(?MODULE, {PagesId2, PagesEntry}).
 
 pages_id() ->
     list_to_binary(riak_core_util:unique_id_62()).
@@ -107,67 +123,39 @@ pages_id() ->
 test() ->
     init(),
     % Testing how get_pages and redefine_pages work
-    PageId1 = new_pages({keys, [1,2,3,4,5,6,7,8,9,10]}),
-    PageSize = 4,
+    AllPages1 = 
+        [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,
+         19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,
+         34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50],
+    PagesId1 = new_pages({keys, AllPages1}),
 
-    ActualPage0 = 1,
-    [1,2,3,4] = get_pages(PageId1, ActualPage0, PageSize),
-    MapRed1Out = [1,2,4],
-    redefine_pages(PageId1, ActualPage0, PageSize, MapRed1Out),
-    [1,2,4,5] = get_pages(PageId1, ActualPage0, PageSize),
-
-    ActualPage1 = ActualPage0 + PageSize,
-    [6,7,8,9] = get_pages(PageId1, ActualPage1, PageSize),
-    MapRed2Out = [6,7,8,9],
-    redefine_pages(PageId1, ActualPage1, PageSize, MapRed2Out),
-    [6,7,8,9] = get_pages(PageId1, ActualPage1, PageSize),
-    
-    
-    ActualPage2 = ActualPage1 + PageSize,
-    [10] = get_pages(PageId1, ActualPage2, PageSize),
-    MapRed3Out = [],
-    redefine_pages(PageId1, ActualPage2, PageSize, MapRed3Out),
-    [] = get_pages(PageId1, ActualPage2, PageSize),
-
-    % Testing how to be used by qriak.erl
-    PagesId2 = new_pages({keys, [
-        {true,1},{true,2},{false,3},{true,4},{true,5},
-        {false,6},{false,7},{true,8},{true,9},{true,10}]}),
-    MapRedFun =
-        fun
-            ({false, _N}) -> false;
-            (Obj) -> {true, Obj}
+    RedefineFun1 =
+        fun(KeyList) ->
+            OddsNo5MultipleFun = 
+                fun
+                    (N) when N rem 2 /= 0, N rem 5 /= 0 -> {true, {N, integer_to_list(N)}};
+                    (_) -> false 
+                end,
+            Out1 = lists:filtermap(OddsNo5MultipleFun, KeyList),
+            lists:unzip(Out1)
         end,
-        
-    Page1 = 1,
-    K1 = get_pages(PagesId2, Page1, PageSize),
-    K2 = lists:filtermap(MapRedFun, K1),
-    K2Len = length(K2),
-    redefine_pages(PagesId2, Page1, PageSize, K2),
-    Page2 = Page1 + K2Len,
-    K3 = get_pages(PagesId2, Page2, PageSize),
-    K4 = lists:filtermap(MapRedFun, K3),
-    K4Len = length(K4),
-    redefine_pages(PagesId2, Page2, PageSize, K4),
-    Page3 = Page2 + K4Len,
-    K5 = get_pages(PagesId2, Page3, PageSize),
-    K6 = lists:filtermap(MapRedFun, K5),
-    redefine_pages(PagesId2, Page3, PageSize, K6),
-
-    [{{query, PagesId2}, AfterProcessKeys}] = 
-        ets:lookup(?MODULE, {query, PagesId2}),
-    [{true,1},{true,2},{true,4},{true,5},
-    {true,8},{true,9},{true,10}] =
-        AfterProcessKeys.
-
-
-
-
-
-
-
     
+    ReadFun1 =
+        fun(KeyList) ->
+            lists:map(fun(X) -> integer_to_list(X) end, KeyList)
+        end,
 
+    MergeFun1 =
+        fun
+            (undefined, Resp2) -> {Resp2, length(Resp2)};
+            (Resp1, Resp2) -> NewResp = Resp1 ++ Resp2, {NewResp, length(NewResp)}
+        end,
 
-
-
+    ["1","3","7","9","11","13","17","19","21","23"] = lists:sublist(process_pages(PagesId1, 1, 10, RedefineFun1, MergeFun1, ReadFun1),1,10),
+    ["1","3","7","9","11","13","17","19","21","23"] = lists:sublist(process_pages(PagesId1, 1, 10, RedefineFun1, MergeFun1, ReadFun1),1,10),
+    ["11","13","17","19","21","23","27","29", "31", "33"] = lists:sublist(process_pages(PagesId1, 5, 10, RedefineFun1, MergeFun1, ReadFun1),1,10),
+    AllProcessed = [
+        "1","3","7","9","11","13","17","19","21","23","27",
+        "29","31","33","37","39","41","43","47","49"],
+    AllProcessed = process_pages(PagesId1, 1, 100, RedefineFun1, MergeFun1, ReadFun1).
+     

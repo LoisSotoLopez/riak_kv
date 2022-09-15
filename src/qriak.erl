@@ -266,9 +266,6 @@ reads_like(Value, Regex)->
       false
   end.
 
-
-    
-
 colour_like(Col1, Col2) ->
   qriak_colours:are_similar(Col1, Col2).
 
